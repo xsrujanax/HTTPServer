@@ -21,11 +21,10 @@ public class HTTPServer{
                 InputStream inputStream = socket.getInputStream();
                 reader = new BufferedReader(new InputStreamReader(inputStream));
 
-                //Send data to the client via client socket- OutputStream.
                 OutputStream outputStream = socket.getOutputStream();
                 PrintWriter printWriter = new PrintWriter(outputStream, true);
 
-                String responseBody;
+                String responseBody = null;
 
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -33,7 +32,13 @@ public class HTTPServer{
                     if (inputHeaderLine[0].equals("GET")) {
                         String[] temp = inputHeaderLine[1].split("\\?");
                         String[] queryParameters=temp[1].split("&") ;
-                        responseBody = processGETRequest(queryParameters, reader);
+                        processGETRequest(queryParameters, reader);
+                        printWriter.println("HTTP/1.1 200 OK");
+                        printWriter.println("Content-Type: application/json");
+                        printWriter.println("");
+                        printWriter.println("");
+                        //printWriter.println("Content-Length: " + responseBody.length());
+
                     }
                     if (line.contains("post")) {
 
@@ -42,18 +47,31 @@ public class HTTPServer{
                         break;
                     }
                 }
-                socket.close();
+                if (responseBody != null) {
+                    // Send the response
+                    printWriter.println("HTTP/1.1 200 OK");
+                    printWriter.println("Content-Type: text/plain");
+                    printWriter.println("Content-Length: " + responseBody.length());
+                    printWriter.println("");
+                    //printWriter.println(responseBody);
+
+                    // Close the socket and the connection
+                    socket.close();
+                }
             }
         } catch (IOException e) {
             System.err.println(e.getMessage());
         }
     }
 
-    static String processGETRequest(String[] queryParameters, BufferedReader reader) throws IOException {
+    static void processGETRequest(String[] queryParameters, BufferedReader reader) throws IOException {
         String line;
+        for (String queryParameter : queryParameters) System.out.println(queryParameter);
         while ((line = reader.readLine()) != null) {
+            if (line.isEmpty()) {
+                break;
+            }
             System.out.println(line);
         }
-        return line;
     }
 }
