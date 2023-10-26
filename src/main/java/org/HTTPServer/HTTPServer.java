@@ -3,6 +3,9 @@ package org.HTTPServer;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.TimeZone;
 
 public class HTTPServer{
 
@@ -18,6 +21,12 @@ public class HTTPServer{
                 Socket socket = serverSocket.accept();
                 System.out.println("New client connected");
 
+                Date currentDate = new Date();
+                SimpleDateFormat dateFormat = new SimpleDateFormat("E, dd MMM yyyy HH:mm:ss z");
+                dateFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
+                String formattedDate = dateFormat.format(currentDate);
+                formattedDate = formattedDate.replace(".", "");
+
                 InputStream inputStream = socket.getInputStream();
                 reader = new BufferedReader(new InputStreamReader(inputStream));
 
@@ -32,12 +41,18 @@ public class HTTPServer{
                     if (inputHeaderLine[0].equals("GET")) {
                         String[] temp = inputHeaderLine[1].split("\\?");
                         String[] queryParameters=temp[1].split("&") ;
-                        processGETRequest(queryParameters, reader);
+                        responseBody=processGETRequest(queryParameters, reader);
                         printWriter.println("HTTP/1.1 200 OK");
+                        printWriter.println("Date: "+formattedDate);
                         printWriter.println("Content-Type: application/json");
+                        printWriter.println("Content-Length: " + responseBody.length());
+                        printWriter.println("Connection: close");
+                        printWriter.println("Server: gunicorn/19.9.0");
+                        printWriter.println("Access-Control-Allow-Origin: *");
+                        printWriter.println("Access-Control-Allow-Credentials: true");
                         printWriter.println("");
                         printWriter.println("");
-                        //printWriter.println("Content-Length: " + responseBody.length());
+
 
                     }
                     if (line.contains("post")) {
@@ -64,14 +79,26 @@ public class HTTPServer{
         }
     }
 
-    static void processGETRequest(String[] queryParameters, BufferedReader reader) throws IOException {
+    static String processGETRequest(String[] queryParameters, BufferedReader reader) throws IOException {
         String line;
-        for (String queryParameter : queryParameters) System.out.println(queryParameter);
+        StringBuilder args = new StringBuilder("\n\t\"args\": {\n");
+        for (String queryParameter : queryParameters) {
+            String[] temp = queryParameter.split("=");
+            args.append("\t\t\"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
+        }
+       args.append("\t},");
+
+       StringBuilder headers = new StringBuilder("\t\"headers\": {\n");
+       System.out.println(args);
         while ((line = reader.readLine()) != null) {
             if (line.isEmpty()) {
                 break;
             }
-            System.out.println(line);
+            String[] temp = line.split(":");
+            headers.append("\t\t\"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
         }
+        headers.append("\t},");
+        System.out.println(headers);
+        return "";
     }
 }
