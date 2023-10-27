@@ -69,7 +69,7 @@ public class HTTPServer {
 
     public static String generateResponseBody(String requestMethod,String url, BufferedReader reader) throws IOException {
         StringBuilder body = new StringBuilder();
-        if(url.startsWith("/get")) {
+        if(url.startsWith("/get") || url.startsWith("/post")) {
             body.append("{\n");
             String data = "", json = "";
             String args = generateArgs(url);
