@@ -68,43 +68,87 @@ public class HTTPServer {
     }
 
     public static String generateResponseBody(String requestMethod,String url, BufferedReader reader) throws IOException {
-        StringBuilder body = new StringBuilder("{\n");
-        String data = "", json = "";
-        String args=generateArgs(url);
-        String headers =  generateHeaders(reader);
-        String line;
+        StringBuilder body = new StringBuilder();
+        if(url.startsWith("/get")) {
+            body.append("{\n");
+            String data = "", json = "";
+            String args = generateArgs(url);
+            String headers = generateHeaders(reader);
+            String line;
 
-        while((line = reader.readLine()) != null){
-            if(line.isEmpty()) {
-                break;
+            while ((line = reader.readLine()) != null) {
+                if (line.isEmpty()) {
+                    break;
+                } else if (line.startsWith("{")) {
+                    data = generateData(line);
+                    json = generateJSON(line);
+                    break;
+                }
             }
-            else if (line.startsWith("{")){
-                data = generateData(line);
-                json= generateJSON(line);
-                break;
+
+            body.append(args);
+            body.append(data);
+            body.append(headers);
+            body.append(json);
+
+            String localIP = "";
+            String host = getHost();
+            try {
+                InetAddress localhost = InetAddress.getLocalHost();
+                localIP = localhost.getHostAddress();
+                System.out.println("Local IP Address: " + localIP);
+            } catch (UnknownHostException e) {
+                e.printStackTrace();
             }
+            body.append("\n  \"origin\": \"").append(localIP).append("\",\n");
+            body.append("  \"url\": \"http://").append(host).append(url).append("\"");
+            body.append("\n}");
+            return body.toString();
         }
+        else{
+            if(requestMethod.equals("GET")){
+                body = processGETRequest_FileStorage(url);
+            }
+            else if(requestMethod.equals("POST")){
+                //body = processPOSTRequest_FileStorage(url);
+            }
 
-        body.append(args);
-        body.append(data);
-        body.append(headers);
-        body.append(json);
-
-        String localIP="";
-        String host = getHost();
-        try {
-            InetAddress localhost = InetAddress.getLocalHost();
-            localIP = localhost.getHostAddress();
-            System.out.println("Local IP Address: " + localIP);
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
+            return body.toString();
         }
-        body.append("\n  \"origin\": \"").append(localIP).append("\",\n");
-        body.append("  \"url\": \"http://").append(host).append(url).append("\"");
-        body.append("\n}");
-        return  body.toString();
-
     }
+
+
+
+    private static StringBuilder processGETRequest_FileStorage(String url) {
+        StringBuilder responseBody = new StringBuilder();
+        String[] path = url.split("\\?");
+        System.out.println(path[0]);
+        if("/".equals(path[0])){
+            //display all files in the directory
+            File fileDirectory =new File("C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage");
+            File[] files = fileDirectory.listFiles();
+
+            if(files!=null && files.length>0){
+                responseBody.append("{\n   \"files\": [");
+                for(File file : files){
+                    responseBody.append("\n  \"").append(file.getName()).append("\",");
+                }
+                responseBody.setLength(responseBody.length()-1);
+                responseBody.append("\n  ]\n");
+
+                return responseBody;
+            }
+        }
+        else if ("/foo".equals(path[0])){
+            //retrieve the content of the file
+            String fileName = "";
+            responseBody.append("HTTP/1.1 404 Not Found\n\nNo files found");
+        }
+        else
+            responseBody.append("HTTP/1.1 404 Not Found\n\nNo files found");
+        return responseBody;
+    }
+
     private static String getResponseHeaders(String responseBody) {
         return "HTTP/1.1 200 OK" + "\n" +
                 "Date: " + getDate() + "\n" +
@@ -134,8 +178,8 @@ public class HTTPServer {
         return headers.toString();
     }
 
-    static String setHost(String host){
-        return HTTPServer.host =host;
+    static void setHost(String host){
+        HTTPServer.host = host;
     }
 
     static String getHost(){
