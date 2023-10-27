@@ -121,31 +121,46 @@ public class HTTPServer {
 
     private static StringBuilder processGETRequest_FileStorage(String url) {
         StringBuilder responseBody = new StringBuilder();
+        responseBody.append("{\n");
         String[] path = url.split("\\?");
-        System.out.println(path[0]);
         if("/".equals(path[0])){
             //display all files in the directory
             File fileDirectory =new File("C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage");
             File[] files = fileDirectory.listFiles();
 
             if(files!=null && files.length>0){
-                responseBody.append("{\n   \"files\": [");
+                responseBody.append("\n   \"files\": [");
                 for(File file : files){
-                    responseBody.append("\n  \"").append(file.getName()).append("\",");
+                    responseBody.append("\"").append(file.getName()).append("\",");
                 }
                 responseBody.setLength(responseBody.length()-1);
-                responseBody.append("\n  ]\n");
-
-                return responseBody;
+                responseBody.append("]\n");
             }
         }
         else if ("/foo".equals(path[0])){
             //retrieve the content of the file
-            String fileName = "";
-            responseBody.append("HTTP/1.1 404 Not Found\n\nNo files found");
+            String fileName = "C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage\\foo.txt";
+            File file = new File(fileName);
+            if(file.exists()){
+
+                try{
+                    BufferedReader reader = new BufferedReader(new FileReader(file));
+                    String line = null;
+                    while((line = reader.readLine())!=null){
+                        responseBody.append(line).append("\n");
+                    }
+                    reader.close();
+                }
+                catch (IOException e){
+                    responseBody.append("Internal error");
+                }
+            }
+            else
+                responseBody.append("File doesn't exist");
         }
         else
             responseBody.append("HTTP/1.1 404 Not Found\n\nNo files found");
+        responseBody.append("}\n");
         return responseBody;
     }
 
@@ -176,14 +191,6 @@ public class HTTPServer {
         headers.append("  },");
 
         return headers.toString();
-    }
-
-    static void setHost(String host){
-        HTTPServer.host = host;
-    }
-
-    static String getHost(){
-        return host;
     }
 
     public static String generateJSON(String data){
@@ -246,5 +253,13 @@ public class HTTPServer {
         String formattedDate = dateFormat.format(currentDate);
         formattedDate = formattedDate.replace(".", "");
         return formattedDate;
+    }
+
+    static void setHost(String host){
+        HTTPServer.host = host;
+    }
+
+    static String getHost(){
+        return host;
     }
 }
