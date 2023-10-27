@@ -1,91 +1,97 @@
 package org.HTTPServer;
 
 import java.io.*;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.TimeZone;
-import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
-public class HTTPServer{
-
-    public static void main(String[] args) {
-
-        BufferedReader reader;
-        try {
+public class HTTPServer {
+    private static String host;
+    public static void main(String[] args){
+        try{
             ServerSocket serverSocket = new ServerSocket(80);
             System.out.println("Server is listening to port" + 80);
 
-            while (true) {
-                //Listen to connection from the client and accept it.
-                Socket socket = serverSocket.accept();
-                System.out.println("New client connected");
+            while(true){
+                try{
+                    Socket socket = serverSocket.accept();
+                    System.out.println("New client connected");
 
-                Date currentDate = new Date();
-                SimpleDateFormat dateFormat = new SimpleDateFormat("E, dd MMM yyyy HH:mm:ss z");
-                dateFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
-                String formattedDate = dateFormat.format(currentDate);
-                formattedDate = formattedDate.replace(".", "");
+                    InputStream inputStream = socket.getInputStream();
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
 
-                InputStream inputStream = socket.getInputStream();
-                reader = new BufferedReader(new InputStreamReader(inputStream));
+                    String response = processRequest(reader);
 
-                OutputStream outputStream = socket.getOutputStream();
-                PrintWriter printWriter = new PrintWriter(outputStream, true);
+                    OutputStream outputStream = socket.getOutputStream();
+                    PrintWriter printWriter = new PrintWriter(outputStream, true);
 
-                String responseBody = null;
-
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    System.out.println(line);
-                    String[] inputHeaderLine = line.split(" ");
-                    if (inputHeaderLine[0].equals("GET")) {
-                        String url=inputHeaderLine[1];
-                        String[] temp = inputHeaderLine[1].split("\\?");
-                        String[] queryParameters=temp[1].split("&") ;
-                        responseBody=processGETRequest(queryParameters, reader,url);
-                        printWriter.println("HTTP/1.1 200 OK");
-                        printWriter.println("Date: "+formattedDate);
-                        printWriter.println("Content-Type: application/json");
-                        printWriter.println("Content-Length: " + responseBody.length());
-                        printWriter.println("Connection: close");
-                        printWriter.println("Server: gunicorn/19.9.0");
-                        printWriter.println("Access-Control-Allow-Origin: *");
-                        printWriter.println("Access-Control-Allow-Credentials: true");
-                        printWriter.println("");
-                        printWriter.println(responseBody);
-                        printWriter.println("");
-
-
-                    }
-                    if (line.contains("post")) {
-
-                    }
-                    if (line.isEmpty()) {
-                        break;
-                    }
-                }
-                if (responseBody != null) {
-                    // Send the response
-                    printWriter.println("HTTP/1.1 200 OK");
-                    printWriter.println("Content-Type: text/plain");
-                    printWriter.println("Content-Length: " + responseBody.length());
+                    printWriter.println(response);
+                    System.out.println(response);
                     printWriter.println("");
-                    //printWriter.println(responseBody);
 
-                    // Close the socket and the connection
                     socket.close();
+
+                } catch (IOException e){
+                    throw new RuntimeException(e);
                 }
             }
         } catch (IOException e) {
-            System.err.println(e.getMessage());
+            throw new RuntimeException(e);
         }
     }
 
-    static String processGETRequest(String[] queryParameters, BufferedReader reader, String url) throws IOException {
+    public static String processRequest(BufferedReader reader) throws IOException {
+        // return headers + body
+        String response ="";
+        String responseHeader="";
+        String responseBody = "";
+        String line=null;
+        while((line = reader.readLine()) != null){
+            System.out.println("line"+line);
+            if(line.contains("GET") || line.contains("POST")){
+                String[] extractData = line.split(" ");
+                String requestMethod= extractData[0];
+                String url = extractData[1];
+                responseBody = generateResponseBody(requestMethod,url,reader);
+                responseHeader = getResponseHeaders(responseBody);
+                break;
+            }
+            if(line.isEmpty()) {
+                break;
+            }
+        }
+        response = responseHeader +responseBody;
+        return response;
+    }
+
+    public static String generateResponseBody(String requestMethod,String url, BufferedReader reader) throws IOException {
+        StringBuilder body = new StringBuilder("{\n");
+        String data = "", json = "";
+        String args=generateArgs(url);
+        String headers =  generateHeaders(reader);
+        String line;
+
+        while((line = reader.readLine()) != null){
+            if(line.isEmpty()) {
+                break;
+            }
+            else if (line.startsWith("{")){
+                data = generateData(line);
+                json= generateJSON(line);
+                break;
+            }
+        }
+
+        body.append(args);
+        body.append(data);
+        body.append(headers);
+        body.append(json);
+
         String localIP="";
+        String host = getHost();
         try {
             InetAddress localhost = InetAddress.getLocalHost();
             localIP = localhost.getHostAddress();
@@ -93,35 +99,108 @@ public class HTTPServer{
         } catch (UnknownHostException e) {
             e.printStackTrace();
         }
+        body.append("\n  \"origin\": \"").append(localIP).append("\",\n");
+        body.append("  \"url\": \"http://").append(host).append(url).append("\"");
+        body.append("\n}");
+        return  body.toString();
 
+    }
+    private static String getResponseHeaders(String responseBody) {
+        return "HTTP/1.1 200 OK" + "\n" +
+                "Date: " + getDate() + "\n" +
+                "Content-Type: application/json" + "\n" +
+                "Content-Length: " + responseBody.length() + "\n" +
+                "Connection: close" + "\n" +
+                "Server: gunicorn/19.9.0" + "\n" +
+                "Access-Control-Allow-Origin: *" + "\n" +
+                "Access-Control-Allow-Credentials: true" + "\n";
+    }
 
-        StringBuilder responseBody = new StringBuilder("{");
-        StringBuilder args = new StringBuilder("\n  \"args\": {\n");
-        for (String queryParameter : queryParameters) {
-            String[] temp = queryParameter.split("=");
-            args.append("    \"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
-        }
-       args.append("  },\n");
+    public static String generateHeaders(BufferedReader reader) throws IOException {
+        StringBuilder headers = new StringBuilder("  \"headers\": {\n");
 
-       StringBuilder headers = new StringBuilder("  \"headers\": {\n");
-       String host = "";
-       String line;
-       while ((line = reader.readLine()) != null) {
-           if (line.isEmpty()) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (line.isEmpty()) {
                 break;
-           }
-           String[] temp = line.split(":");
-           if(line.contains("Host"))
-               host = temp[1];
-           headers.append("    \"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
-       }
-       headers.append("  },");
+            }
+            String[] temp = line.split(":");
+            if(line.contains("Host"))
+                setHost(temp[1]);
+            headers.append("    \"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
+        }
+        headers.append("  },");
 
-       responseBody.append(args).append(headers);
-       System.out.println(responseBody);
-       responseBody.append("\n  \"origin\": \"").append(localIP).append("\",\n");
-       responseBody.append("  \"url\": \"http://").append(host).append(url).append("\"");
-       responseBody.append("\n}");
-       return responseBody.toString();
+        return headers.toString();
+    }
+
+    static String setHost(String host){
+        return HTTPServer.host =host;
+    }
+
+    static String getHost(){
+        return host;
+    }
+
+    public static String generateJSON(String data){
+
+        StringBuilder json = new StringBuilder();
+        json.append("\n  \"json\":{");
+
+        data = data.replace("{","");
+        data = data.replace("}","");
+        String[] jsonData = data.split(",");
+
+        for(String attribute : jsonData )
+            json.append("\n    ").append(attribute).append(",");
+        json.append("\n  },");
+
+        return json.toString();
+    }
+
+    public static String generateData(String dataAttributes){
+        StringBuilder data = new StringBuilder();
+        data.append("  \"data\":{");
+
+        dataAttributes = dataAttributes.replace("{","");
+        dataAttributes = dataAttributes.replace("}","");
+        String[] jsonData = dataAttributes.split(",");
+
+        for(String attribute : jsonData )
+            data.append(attribute.replace("\"","\\\"")).append(",");
+        data.append("},\n");
+
+        return data.toString();
+    }
+
+    public static String generateArgs(String url){
+
+        StringBuilder args = new StringBuilder();
+        args.append("\n  \"args\":{");
+
+        String[] extractQueryParameters = url.split("\\?");
+
+        if(extractQueryParameters.length>1) {
+            String[] queryParameters = extractQueryParameters[1].split("&");
+
+            for (String queryParameter : queryParameters) {
+                String[] key_values = queryParameter.split("=");
+                args.append("\n    \"").append(key_values[0]).append("\": \"").append(key_values[1]).append("\",");
+            }
+            args.append("\n  ");
+        }
+        args.append("},\n");
+
+        return args.toString();
+
+    }
+
+    public static String getDate(){
+        Date currentDate = new Date();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("E, dd MMM yyyy HH:mm:ss z");
+        dateFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
+        String formattedDate = dateFormat.format(currentDate);
+        formattedDate = formattedDate.replace(".", "");
+        return formattedDate;
     }
 }
