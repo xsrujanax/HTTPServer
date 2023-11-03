@@ -10,6 +10,7 @@ import java.util.*;
 
 public class HTTPServer {
     private static String host;
+    private static final String BASE_DIRECTORY = "C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage";
     public static void main(String[] args){
         try{
             ServerSocket serverSocket = new ServerSocket(80);
@@ -110,11 +111,44 @@ public class HTTPServer {
                 body = processGETRequest_FileStorage(url);
             }
             else if(requestMethod.equals("POST")){
-                //body = processPOSTRequest_FileStorage(url);
+                body = processPOSTRequest_FileStorage(url,reader);
             }
 
             return body.toString();
         }
+    }
+
+    private static StringBuilder processPOSTRequest_FileStorage(String url,BufferedReader reader) throws IOException {
+        StringBuilder responseBody = new StringBuilder();
+        responseBody.append("\n{\n");
+        String[] path = url.split("\\?");
+        boolean overwrite = true;
+        if("/bar".equals(path[0])){
+            String content = "";
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                System.out.println("post"+line);
+                if(line.contains("overwrite")){
+                    String[] ow= line.split("=");
+                    overwrite = Boolean.parseBoolean(ow[1]);
+                }
+                if (line.startsWith("{")) {
+                    content = line;
+                    break;
+                }
+
+            }
+
+            File file =new File("bar.txt");
+            BufferedWriter bw = new BufferedWriter(new FileWriter("C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage\\" + file,overwrite));
+            bw.flush();
+            bw.write(content);
+            bw.close();
+            responseBody.append("Content has been saved to a file");
+        }
+        responseBody.append("\n}");
+        return responseBody;
     }
 
 
@@ -122,45 +156,49 @@ public class HTTPServer {
     private static StringBuilder processGETRequest_FileStorage(String url) {
         StringBuilder responseBody = new StringBuilder();
         responseBody.append("{\n");
+
+
         String[] path = url.split("\\?");
-        if("/".equals(path[0])){
-            //display all files in the directory
-            File fileDirectory =new File("C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage");
-            File[] files = fileDirectory.listFiles();
+        String requestedPath = BASE_DIRECTORY + path[0].replace("/","\\");
 
-            if(files!=null && files.length>0){
-                responseBody.append("\n   \"files\": [");
-                for(File file : files){
-                    responseBody.append("\"").append(file.getName()).append("\",");
-                }
-                responseBody.setLength(responseBody.length()-1);
-                responseBody.append("]\n");
-            }
-        }
-        else if ("/foo".equals(path[0])){
-            //retrieve the content of the file
-            String fileName = "C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage\\foo.txt";
-            File file = new File(fileName);
-            if(file.exists()){
+        if(requestedPath.startsWith(BASE_DIRECTORY)) {
+            if ("/".equals(path[0])) {
+                //display all files in the directory
+                File fileDirectory = new File(requestedPath);
+                System.out.println(fileDirectory);
+                File[] files = fileDirectory.listFiles();
 
-                try{
-                    BufferedReader reader = new BufferedReader(new FileReader(file));
-                    String line = null;
-                    while((line = reader.readLine())!=null){
-                        responseBody.append(line).append("\n");
+                if (files != null && files.length > 0) {
+                    responseBody.append("   \"files\": [");
+                    for (File file : files) {
+                        responseBody.append("\"").append(file.getName()).append("\",");
                     }
-                    reader.close();
+                    responseBody.setLength(responseBody.length() - 1);
+                    responseBody.append("]");
                 }
-                catch (IOException e){
-                    responseBody.append("Internal error");
-                }
-            }
-            else
-                responseBody.append("File doesn't exist");
+            } else if ("/foo".equals(path[0])) {
+                //retrieve the content of the file
+                File file = new File(requestedPath + ".txt");
+                if (file.exists() && file.isFile()) {
+                    try {
+                        BufferedReader reader = new BufferedReader(new FileReader(file));
+                        String line = null;
+                        while ((line = reader.readLine()) != null) {
+                            responseBody.append(line).append("\n");
+                        }
+                        reader.close();
+                    } catch (IOException e) {
+                        responseBody.append("  Internal error");
+                    }
+                } else
+                    responseBody.append("  HTTP/1.1 404 Not Found\\n\\nFile not found");
+            } else
+                responseBody.append("  HTTP/1.1 404 Not Found\n\nFile does not exist in the directory");
         }
         else
-            responseBody.append("HTTP/1.1 404 Not Found\n\nNo files found");
-        responseBody.append("}\n");
+            responseBody.append("HTTP/1.1 403 Forbidden\n\nAccess to this directory is not allowed");
+
+        responseBody.append("\n}\n");
         return responseBody;
     }
 
@@ -188,7 +226,8 @@ public class HTTPServer {
                 setHost(temp[1]);
             headers.append("    \"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
         }
-        headers.append("  },");
+        headers.setLength(headers.length()-1);
+        headers.append("\n  },");
 
         return headers.toString();
     }
@@ -204,6 +243,8 @@ public class HTTPServer {
 
         for(String attribute : jsonData )
             json.append("\n    ").append(attribute).append(",");
+
+        json.setLength(json.length()-1);
         json.append("\n  },");
 
         return json.toString();
@@ -219,6 +260,8 @@ public class HTTPServer {
 
         for(String attribute : jsonData )
             data.append(attribute.replace("\"","\\\"")).append(",");
+
+        data.setLength(data.length()-1);
         data.append("},\n");
 
         return data.toString();
