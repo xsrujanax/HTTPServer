@@ -139,7 +139,6 @@ public class HTTPServer {
                 }
 
             }
-
             File file =new File("bar.txt");
             BufferedWriter bw = new BufferedWriter(new FileWriter("C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage\\" + file,overwrite));
             bw.flush();
