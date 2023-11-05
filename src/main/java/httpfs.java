@@ -1,17 +1,55 @@
-package org.HTTPServer;
 
 import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-public class HTTPServer {
+public class httpfs {
     private static String host;
-    private static final String BASE_DIRECTORY = "C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage";
-    public static void main(String[] args){
+    private final String baseDirectory;
+    private int port;
+    private boolean verbose;
+    private static int statusCode = 200;
+
+    Map<Integer,String> map = new HashMap<>();
+
+    public httpfs(int port, String baseDirectory, boolean verbose) {
+        this.port = port;
+        this. baseDirectory = baseDirectory;
+        this.verbose = verbose;
+
+    }
+
+    public String getBaseDirectory() {
+        return baseDirectory;
+    }
+
+    static void setHost(String host){
+        httpfs.host = host;
+    }
+
+    static String getHost(){
+        return host;
+    }
+
+    public int getStatusCode() {
+        return statusCode;
+    }
+
+    public void setStatusCode(int statusCode) {
+        this.statusCode = statusCode;
+    }
+
+    public void startServer(){
+        map.put(200,"OK");
+        map.put(404,"File Not Found");
+        map.put(403,"Permission Denied");
+        map.put(500, "Internal Server Error");
         try{
             ServerSocket serverSocket = new ServerSocket(80);
             System.out.println("Server is listening to port" + 80);
@@ -44,12 +82,12 @@ public class HTTPServer {
         }
     }
 
-    public static String processRequest(BufferedReader reader) throws IOException {
+    public String processRequest(BufferedReader reader) throws IOException {
         // return headers + body
-        String response ="";
+        String response;
         String responseHeader="";
         String responseBody = "";
-        String line=null;
+        String line;
         while((line = reader.readLine()) != null){
             System.out.println("line"+line);
             if(line.contains("GET") || line.contains("POST")){
@@ -68,7 +106,7 @@ public class HTTPServer {
         return response;
     }
 
-    public static String generateResponseBody(String requestMethod,String url, BufferedReader reader) throws IOException {
+    public String generateResponseBody(String requestMethod, String url, BufferedReader reader) throws IOException {
         StringBuilder body = new StringBuilder();
         if(url.startsWith("/get") || url.startsWith("/post")) {
             body.append("{\n");
@@ -97,7 +135,6 @@ public class HTTPServer {
             try {
                 InetAddress localhost = InetAddress.getLocalHost();
                 localIP = localhost.getHostAddress();
-                System.out.println("Local IP Address: " + localIP);
             } catch (UnknownHostException e) {
                 e.printStackTrace();
             }
@@ -118,33 +155,59 @@ public class HTTPServer {
         }
     }
 
-    private static StringBuilder processPOSTRequest_FileStorage(String url,BufferedReader reader) throws IOException {
+    private StringBuilder processPOSTRequest_FileStorage(String url,BufferedReader reader) throws IOException {
         StringBuilder responseBody = new StringBuilder();
         responseBody.append("\n{\n");
         String[] path = url.split("\\?");
         boolean overwrite = true;
-        if("/bar".equals(path[0])){
-            String content = "";
-            String line;
 
-            while ((line = reader.readLine()) != null) {
-                System.out.println("post"+line);
-                if(line.contains("overwrite")){
-                    String[] ow= line.split("=");
-                    overwrite = Boolean.parseBoolean(ow[1]);
-                }
-                if (line.startsWith("{")) {
-                    content = line;
-                    break;
-                }
+        if(path[0].startsWith("/")) {
+            try{
+                String requestedPath = getBaseDirectory() + "/" + path[0];
+                Path absolutePath = Paths.get(getBaseDirectory()).resolve(requestedPath).toAbsolutePath().normalize();
 
+                if (absolutePath.startsWith(Paths.get(getBaseDirectory()).toAbsolutePath())) {
+                    String content = "";
+                    String line;
+
+                    while ((line = reader.readLine()) != null) {
+                        System.out.println("post" + line);
+                        if (line.contains("overwrite")) {
+                            String[] ow = line.split("=");
+                            overwrite = Boolean.parseBoolean(ow[1]);
+                        }
+                        if (line.startsWith("{")) {
+                            content = line;
+                            break;
+                        }
+
+                    }
+                    File file = new File(path[0].replace("/", "\\") + ".txt");
+                    if(!file.exists())
+                        responseBody.append(file).append(" doesn't exist, creating a new file");
+
+                    BufferedWriter bw = new BufferedWriter(new FileWriter(getBaseDirectory() + "\\" + file, !overwrite));
+                    bw.flush();
+                    bw.write(content);
+                    bw.close();
+                    setStatusCode(200);
+                    responseBody.append("Content has been saved to a file");
+
+                } else{
+                    setStatusCode(403);
+                    responseBody.append("403 Forbidden: Access to this directory is not allowed");
+                }
+            }catch (FileNotFoundException e) {
+                setStatusCode(404);
+                responseBody.append("File Not Found");
+            } catch (IOException e) {
+                setStatusCode(500);
+                responseBody.append("Internal Server Error");
+            } catch (SecurityException e) {
+                setStatusCode(403);
+                responseBody.append("Forbidden status");
             }
-            File file =new File("bar.txt");
-            BufferedWriter bw = new BufferedWriter(new FileWriter("C:\\Users\\Sruja\\GIT\\HTTPServer\\SimpleStorage\\" + file,overwrite));
-            bw.flush();
-            bw.write(content);
-            bw.close();
-            responseBody.append("Content has been saved to a file");
+
         }
         responseBody.append("\n}");
         return responseBody;
@@ -152,15 +215,16 @@ public class HTTPServer {
 
 
 
-    private static StringBuilder processGETRequest_FileStorage(String url) {
+    private StringBuilder processGETRequest_FileStorage(String url) {
         StringBuilder responseBody = new StringBuilder();
         responseBody.append("{\n");
 
 
         String[] path = url.split("\\?");
-        String requestedPath = BASE_DIRECTORY + path[0].replace("/","\\");
+        String requestedPath = baseDirectory + path[0].replace("/","\\");
 
-        if(requestedPath.startsWith(BASE_DIRECTORY)) {
+
+        if(requestedPath.startsWith(baseDirectory)) {
             if ("/".equals(path[0])) {
                 //display all files in the directory
                 File fileDirectory = new File(requestedPath);
@@ -201,8 +265,8 @@ public class HTTPServer {
         return responseBody;
     }
 
-    private static String getResponseHeaders(String responseBody) {
-        return "HTTP/1.1 200 OK" + "\n" +
+    private String getResponseHeaders(String responseBody) {
+        return "HTTP/1.1 " + getStatusCode() + " "+ map.get(getStatusCode()) + "\n" +
                 "Date: " + getDate() + "\n" +
                 "Content-Type: application/json" + "\n" +
                 "Content-Length: " + responseBody.length() + "\n" +
@@ -297,11 +361,5 @@ public class HTTPServer {
         return formattedDate;
     }
 
-    static void setHost(String host){
-        HTTPServer.host = host;
-    }
 
-    static String getHost(){
-        return host;
-    }
 }
