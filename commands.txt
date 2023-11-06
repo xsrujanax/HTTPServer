@@ -2,4 +2,7 @@ java httpc post -v -h Content-Type:application/json -d '{"Assignment": 1, "Cours
 java httpc get -v 'http://localhost:80/get/?assignement=1&c=1'
 java httpc get -v '/foo'
 java httpc get 'http://localhost:80/'
+java httpc get -v 'http://localhost:80/'
 java httpc get 'http://localhost:80/foo'
+java httpc get -v 'http://localhost:80/foo'
+java httpc post -v -h Content-Type:application/json -d '{"Assignment": 1, "Course":445}' http://localhost/CheckingPost -h overwrite=true

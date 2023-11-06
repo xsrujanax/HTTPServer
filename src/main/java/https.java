@@ -31,8 +31,6 @@ public class https {
                     break;
             }
         }
-        System.out.println(port);
-        System.out.println(baseDirectory);
         httpfs server = new httpfs(port, baseDirectory, verbose);
         server.startServer();
     }

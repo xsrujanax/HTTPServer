@@ -1,4 +1,5 @@
 
+import javax.net.ssl.HostnameVerifier;
 import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -11,10 +12,12 @@ import java.util.*;
 
 public class httpfs {
     private static String host;
+    private String requestLine;
     private final String baseDirectory;
     private int port;
     private boolean verbose;
     private static int statusCode = 200;
+    private boolean overWrite=true;
 
     Map<Integer,String> map = new HashMap<>();
 
@@ -47,12 +50,14 @@ public class httpfs {
 
     public void startServer(){
         map.put(200,"OK");
+        map.put(201,"Created");
         map.put(404,"File Not Found");
         map.put(403,"Permission Denied");
         map.put(500, "Internal Server Error");
         try{
-            ServerSocket serverSocket = new ServerSocket(80);
-            System.out.println("Server is listening to port" + 80);
+            ServerSocket serverSocket = new ServerSocket(port);
+            System.out.println("Server is listening to port" + port);
+            System.out.println("Data Directory:" + baseDirectory);
 
             while(true){
                 try{
@@ -64,15 +69,26 @@ public class httpfs {
 
                     String response = processRequest(reader);
 
+                    if(verbose){
+                        System.out.println("Request received:");
+                        System.out.println(requestLine);
+                        System.out.println("Host: "+getHost());
+                    }
+
                     OutputStream outputStream = socket.getOutputStream();
                     PrintWriter printWriter = new PrintWriter(outputStream, true);
 
                     printWriter.println(response);
-                    System.out.println(response);
                     printWriter.println("");
 
+                    if(verbose){
+                        System.out.println("\nResponse sent:");
+                        System.out.println("HTTP/1.0 "+ getStatusCode() +" "+ map.get(getStatusCode()));
+                        System.out.println("Content-type: application/json");
+                        System.out.println("Content-length: "+response.length());
+                        System.out.println("\n\n...");
+                    }
                     socket.close();
-
                 } catch (IOException e){
                     throw new RuntimeException(e);
                 }
@@ -89,8 +105,8 @@ public class httpfs {
         String responseBody = "";
         String line;
         while((line = reader.readLine()) != null){
-            System.out.println("line"+line);
             if(line.contains("GET") || line.contains("POST")){
+                requestLine = line;
                 String[] extractData = line.split(" ");
                 String requestMethod= extractData[0];
                 String url = extractData[1];
@@ -108,10 +124,14 @@ public class httpfs {
 
     public String generateResponseBody(String requestMethod, String url, BufferedReader reader) throws IOException {
         StringBuilder body = new StringBuilder();
-        if(url.startsWith("/get") || url.startsWith("/post")) {
+        if(url.startsWith("/")) {
             body.append("{\n");
             String data = "", json = "";
             String args = generateArgs(url);
+            String files ="";
+            String forms="";
+            String status="";
+            String content ="";
             String headers = generateHeaders(reader);
             String line;
 
@@ -119,14 +139,27 @@ public class httpfs {
                 if (line.isEmpty()) {
                     break;
                 } else if (line.startsWith("{")) {
+                    content=line;
                     data = generateData(line);
                     json = generateJSON(line);
+                    forms = "  \"form\": {}\n";
                     break;
                 }
             }
 
+            if(!(url.startsWith("/post") || url.startsWith("/get"))){
+                if(requestMethod.equals("GET")){
+                    files = processGETRequest_FileStorage(url);
+                }
+                else if(requestMethod.equals("POST")){
+                    status = processPOSTRequest_FileStorage(url,content);
+                }
+            }
             body.append(args);
             body.append(data);
+            body.append(files);
+            body.append(forms);
+            body.append(status);
             body.append(headers);
             body.append(json);
 
@@ -143,126 +176,101 @@ public class httpfs {
             body.append("\n}");
             return body.toString();
         }
-        else{
-            if(requestMethod.equals("GET")){
-                body = processGETRequest_FileStorage(url);
-            }
-            else if(requestMethod.equals("POST")){
-                body = processPOSTRequest_FileStorage(url,reader);
-            }
-
             return body.toString();
-        }
+
     }
 
-    private StringBuilder processPOSTRequest_FileStorage(String url,BufferedReader reader) throws IOException {
+    private String processPOSTRequest_FileStorage(String url,String content) throws IOException {
+
         StringBuilder responseBody = new StringBuilder();
-        responseBody.append("\n{\n");
+        responseBody.append("  \"status\":{\n");
         String[] path = url.split("\\?");
-        boolean overwrite = true;
 
         if(path[0].startsWith("/")) {
-            try{
-                String requestedPath = getBaseDirectory() + "/" + path[0];
-                Path absolutePath = Paths.get(getBaseDirectory()).resolve(requestedPath).toAbsolutePath().normalize();
+            String requestedPath = getBaseDirectory() + "/" + path[0];
+            Path absolutePath = Paths.get(getBaseDirectory()).resolve(requestedPath).toAbsolutePath().normalize();
 
-                if (absolutePath.startsWith(Paths.get(getBaseDirectory()).toAbsolutePath())) {
-                    String content = "";
-                    String line;
-
-                    while ((line = reader.readLine()) != null) {
-                        System.out.println("post" + line);
-                        if (line.contains("overwrite")) {
-                            String[] ow = line.split("=");
-                            overwrite = Boolean.parseBoolean(ow[1]);
-                        }
-                        if (line.startsWith("{")) {
-                            content = line;
-                            break;
-                        }
-
-                    }
-                    File file = new File(path[0].replace("/", "\\") + ".txt");
-                    if(!file.exists())
-                        responseBody.append(file).append(" doesn't exist, creating a new file");
-
-                    BufferedWriter bw = new BufferedWriter(new FileWriter(getBaseDirectory() + "\\" + file, !overwrite));
-                    bw.flush();
-                    bw.write(content);
-                    bw.close();
-                    setStatusCode(200);
-                    responseBody.append("Content has been saved to a file");
-
-                } else{
-                    setStatusCode(403);
-                    responseBody.append("403 Forbidden: Access to this directory is not allowed");
+            if (absolutePath.startsWith(Paths.get(getBaseDirectory()).toAbsolutePath())) {
+                File file = new File(path[0].replace("/", "\\") + ".txt");
+                if(!file.exists()){
+                    setStatusCode(201);
+                    responseBody.append("\t").append(file.getName()).append("Doesn't exist, creating a new file,");
                 }
-            }catch (FileNotFoundException e) {
-                setStatusCode(404);
-                responseBody.append("File Not Found");
-            } catch (IOException e) {
-                setStatusCode(500);
-                responseBody.append("Internal Server Error");
-            } catch (SecurityException e) {
-                setStatusCode(403);
-                responseBody.append("Forbidden status");
-            }
 
+                BufferedWriter bw = new BufferedWriter(new FileWriter(getBaseDirectory() + "\\" + file, !overWrite));
+                bw.flush();
+                bw.write(content);
+                bw.close();
+                responseBody.append("\n\tContent has been saved to a file");
+
+            } else{
+                setStatusCode(403);
+                responseBody.append("\t403 Forbidden: Access to this directory is not allowed.");
+            }
         }
-        responseBody.append("\n}");
-        return responseBody;
+        responseBody.append("\n  }\n");
+        return responseBody.toString();
     }
 
 
 
-    private StringBuilder processGETRequest_FileStorage(String url) {
+    private String processGETRequest_FileStorage(String url) {
         StringBuilder responseBody = new StringBuilder();
-        responseBody.append("{\n");
 
 
         String[] path = url.split("\\?");
-        String requestedPath = baseDirectory + path[0].replace("/","\\");
-
-
-        if(requestedPath.startsWith(baseDirectory)) {
+        String requestedPath = getBaseDirectory() + "/" + path[0];
+        Path absolutePath = Paths.get(getBaseDirectory()).resolve(requestedPath).toAbsolutePath().normalize();
+        responseBody.append("  \"files\": {");
+        if(absolutePath.startsWith(Paths.get(getBaseDirectory()).toAbsolutePath())) {
             if ("/".equals(path[0])) {
                 //display all files in the directory
                 File fileDirectory = new File(requestedPath);
-                System.out.println(fileDirectory);
                 File[] files = fileDirectory.listFiles();
-
                 if (files != null && files.length > 0) {
-                    responseBody.append("   \"files\": [");
                     for (File file : files) {
-                        responseBody.append("\"").append(file.getName()).append("\",");
+                        responseBody.append("\n\t\"").append(file.getName()).append("\",");
                     }
                     responseBody.setLength(responseBody.length() - 1);
-                    responseBody.append("]");
                 }
-            } else if ("/foo".equals(path[0])) {
+                responseBody.append("\n  }\n");
+            } else if (path[0].startsWith("/")) {
                 //retrieve the content of the file
-                File file = new File(requestedPath + ".txt");
+                File file = new File(requestedPath+ ".txt");
                 if (file.exists() && file.isFile()) {
                     try {
                         BufferedReader reader = new BufferedReader(new FileReader(file));
                         String line = null;
+                        responseBody.setLength(0);
+                        responseBody.append("  \"data\": {");
                         while ((line = reader.readLine()) != null) {
-                            responseBody.append(line).append("\n");
+                            responseBody.append("\n\t").append(line).append(",");
                         }
+                        responseBody.setLength(responseBody.length() - 1);
                         reader.close();
+                        setStatusCode(200);
                     } catch (IOException e) {
-                        responseBody.append("  Internal error");
+                        setStatusCode(500);
+                        responseBody.append("\tInternal error");
                     }
-                } else
-                    responseBody.append("  HTTP/1.1 404 Not Found\\n\\nFile not found");
-            } else
-                responseBody.append("  HTTP/1.1 404 Not Found\n\nFile does not exist in the directory");
-        }
-        else
-            responseBody.append("HTTP/1.1 403 Forbidden\n\nAccess to this directory is not allowed");
+                } else{
+                    setStatusCode(404);
+                    responseBody.append("\n\t404 Not Found\n\tFile does not exist in the directory");
+                }
 
-        responseBody.append("\n}\n");
-        return responseBody;
+            }
+            else{
+                setStatusCode(404);
+                responseBody.append("\tDirectory not found");
+
+            }
+        }
+        else{
+            setStatusCode(403);
+            responseBody.append("\tHTTP/1.1 403 Forbidden\n\n  Access to this directory is not allowed");
+        }
+        responseBody.append("\n  },\n");
+        return responseBody.toString();
     }
 
     private String getResponseHeaders(String responseBody) {
@@ -276,7 +284,7 @@ public class httpfs {
                 "Access-Control-Allow-Credentials: true" + "\n";
     }
 
-    public static String generateHeaders(BufferedReader reader) throws IOException {
+    public String generateHeaders(BufferedReader reader) throws IOException {
         StringBuilder headers = new StringBuilder("  \"headers\": {\n");
 
         String line;
@@ -287,11 +295,15 @@ public class httpfs {
             String[] temp = line.split(":");
             if(line.contains("Host"))
                 setHost(temp[1]);
-            headers.append("    \"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
+            if(!line.startsWith("overwrite"))
+                headers.append("\t\"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
+            if(line.startsWith("overwrite")){
+                String[] append = line.split("=");
+                overWrite= Boolean.parseBoolean(append[1]);
+            }
         }
         headers.setLength(headers.length()-1);
         headers.append("\n  },");
-
         return headers.toString();
     }
 
@@ -305,7 +317,7 @@ public class httpfs {
         String[] jsonData = data.split(",");
 
         for(String attribute : jsonData )
-            json.append("\n    ").append(attribute).append(",");
+            json.append("\n\t").append(attribute).append(",");
 
         json.setLength(json.length()-1);
         json.append("\n  },");
@@ -338,13 +350,16 @@ public class httpfs {
         String[] extractQueryParameters = url.split("\\?");
 
         if(extractQueryParameters.length>1) {
-            String[] queryParameters = extractQueryParameters[1].split("&");
+            if(!extractQueryParameters[1].equals("null")){
+                String[] queryParameters = extractQueryParameters[1].split("&");
 
-            for (String queryParameter : queryParameters) {
-                String[] key_values = queryParameter.split("=");
-                args.append("\n    \"").append(key_values[0]).append("\": \"").append(key_values[1]).append("\",");
+                for (String queryParameter : queryParameters) {
+                    String[] key_values = queryParameter.split("=");
+                    args.append("\n\t\"").append(key_values[0]).append("\": \"").append(key_values[1]).append("\",");
+                }
+                args.append("\n  ");
             }
-            args.append("\n  ");
+
         }
         args.append("},\n");
 
