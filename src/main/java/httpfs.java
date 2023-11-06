@@ -1,4 +1,8 @@
-
+// ..........................................
+// Assignment # 2!
+// © @Srujana Guttula - 40237663 , @Aakansha -  40188693
+//
+// ..........................................
 import javax.net.ssl.HostnameVerifier;
 import java.io.*;
 import java.net.InetAddress;
