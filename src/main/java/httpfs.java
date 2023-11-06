@@ -123,6 +123,7 @@ public class httpfs {
     }
 
     public String generateResponseBody(String requestMethod, String url, BufferedReader reader) throws IOException {
+        setStatusCode(200);
         StringBuilder body = new StringBuilder();
         if(url.startsWith("/")) {
             body.append("{\n");
@@ -133,9 +134,11 @@ public class httpfs {
             String status="";
             String content ="";
             String headers = generateHeaders(reader);
-            String line;
-
+            String line=null;
+            if(requestMethod.equals("POST")){
+            System.out.println("checking while");
             while ((line = reader.readLine()) != null) {
+                System.out.println("line"+line);
                 if (line.isEmpty()) {
                     break;
                 } else if (line.startsWith("{")) {
@@ -145,8 +148,8 @@ public class httpfs {
                     forms = "  \"form\": {}\n";
                     break;
                 }
-            }
-
+            }}
+            System.out.println("chexk");
             if(!(url.startsWith("/post") || url.startsWith("/get"))){
                 if(requestMethod.equals("GET")){
                     files = processGETRequest_FileStorage(url);
@@ -191,13 +194,14 @@ public class httpfs {
             Path absolutePath = Paths.get(getBaseDirectory()).resolve(requestedPath).toAbsolutePath().normalize();
 
             if (absolutePath.startsWith(Paths.get(getBaseDirectory()).toAbsolutePath())) {
-                File file = new File(path[0].replace("/", "\\") + ".txt");
+                File file = new File(requestedPath+ ".txt");
+                System.out.println(file.getName() + file.exists());
                 if(!file.exists()){
                     setStatusCode(201);
                     responseBody.append("\t").append(file.getName()).append("Doesn't exist, creating a new file,");
                 }
 
-                BufferedWriter bw = new BufferedWriter(new FileWriter(getBaseDirectory() + "\\" + file, !overWrite));
+                BufferedWriter bw = new BufferedWriter(new FileWriter(file, !overWrite));
                 bw.flush();
                 bw.write(content);
                 bw.close();
@@ -215,9 +219,8 @@ public class httpfs {
 
 
     private String processGETRequest_FileStorage(String url) {
+        System.out.println("Generating get response");
         StringBuilder responseBody = new StringBuilder();
-
-
         String[] path = url.split("\\?");
         String requestedPath = getBaseDirectory() + "/" + path[0];
         Path absolutePath = Paths.get(getBaseDirectory()).resolve(requestedPath).toAbsolutePath().normalize();
@@ -233,6 +236,7 @@ public class httpfs {
                     }
                     responseBody.setLength(responseBody.length() - 1);
                 }
+                setStatusCode(200);
                 responseBody.append("\n  }\n");
             } else if (path[0].startsWith("/")) {
                 //retrieve the content of the file
@@ -248,11 +252,11 @@ public class httpfs {
                         }
                         responseBody.setLength(responseBody.length() - 1);
                         reader.close();
-                        setStatusCode(200);
                     } catch (IOException e) {
                         setStatusCode(500);
                         responseBody.append("\tInternal error");
                     }
+                    setStatusCode(200);
                 } else{
                     setStatusCode(404);
                     responseBody.append("\n\t404 Not Found\n\tFile does not exist in the directory");
@@ -285,21 +289,24 @@ public class httpfs {
     }
 
     public String generateHeaders(BufferedReader reader) throws IOException {
+        System.out.println("Generaring response headers");
         StringBuilder headers = new StringBuilder("  \"headers\": {\n");
 
         String line;
         while ((line = reader.readLine()) != null) {
+            System.out.println(line);
             if (line.isEmpty()) {
                 break;
             }
             String[] temp = line.split(":");
             if(line.contains("Host"))
                 setHost(temp[1]);
-            if(!line.startsWith("overwrite"))
-                headers.append("\t\"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
             if(line.startsWith("overwrite")){
                 String[] append = line.split("=");
                 overWrite= Boolean.parseBoolean(append[1]);
+            }
+            else{
+                headers.append("\t\"").append(temp[0]).append("\": \"").append(temp[1]).append("\",\n");
             }
         }
         headers.setLength(headers.length()-1);
